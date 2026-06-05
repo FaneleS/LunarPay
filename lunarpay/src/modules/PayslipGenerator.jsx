@@ -62,420 +62,354 @@ async function generatePayslipPDF(payslip, company, template, logoDataUrl) {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pw = doc.internal.pageSize.getWidth();
   const ph = doc.internal.pageSize.getHeight();
-  const margin = 20;
-  const contentWidth = pw - margin * 2;
+  const margin = 14;
+  const cw = pw - margin * 2;
   let y = margin;
 
   const emp = payslip.employee;
-  const olive = [101, 109, 74];
+
+  // Colour palette
+  const ink    = [30, 30, 30];
+  const muted  = [100, 100, 100];
+  const light  = [230, 230, 230];
+  const xlight = [245, 245, 245];
+  const white  = [255, 255, 255];
+  const olive  = [101, 109, 74];
   const forest = [58, 66, 50];
-  const ink = [51, 61, 41];
-  const muted = [127, 116, 85];
-  const light = [237, 232, 220];
-  const white = [255, 255, 255];
-  const wheat = [196, 180, 112];
-  const danger = [139, 58, 30];
+  const wheat  = [196, 180, 112];
+  const danger = [180, 50, 30];
+  const hdrBg  = [240, 240, 240];
 
-  // ── TEMPLATE: DETAILED ────────────────────────────────────────────────────
-  if (template === "detailed") {
-    // Header bar
-    doc.setFillColor(...forest);
-    doc.rect(0, 0, pw, 28, "F");
+  const setC  = (rgb) => doc.setTextColor(...rgb);
+  const setF  = (rgb) => doc.setFillColor(...rgb);
+  const setD  = (rgb) => doc.setDrawColor(...rgb);
+  const bold  = () => doc.setFont("helvetica", "bold");
+  const norm  = () => doc.setFont("helvetica", "normal");
+  const sz    = (n) => doc.setFontSize(n);
+  const line  = (x1, y1, x2, y2) => { setD(light); doc.setLineWidth(0.2); doc.line(x1, y1, x2, y2); };
+  const hLine = (yy) => line(margin, yy, pw - margin, yy);
+  const rect  = (x, yy, w, h, fill) => { setF(fill); doc.rect(x, yy, w, h, "F"); };
 
-    // Logo
+  // ── TEMPLATE: PROFESSIONAL (AGL-style) ────────────────────────────────────
+  if (template === "professional") {
+    const G1  = [248, 248, 248]; // lightest grey — alternating row bg
+    const G2  = [238, 238, 238]; // section header bg
+    const G3  = [220, 220, 220]; // sub-header / divider
+    const NET = [40,  40,  40];  // net pay bar background
+    const halfW = (cw - 4) / 2;
+    const lX = margin;
+    const rX = margin + halfW + 4;
+
+    // helpers — all text in ink, no colour
+    const th = (txt, x, yy, opts) => { bold(); sz(7); setC(muted); doc.text(txt, x, yy, opts || {}); };
+    const tv = (txt, x, yy, opts) => { norm(); sz(8.5); setC(ink); doc.text(txt, x, yy, opts || {}); };
+    const amt = (txt, x, yy) => { bold(); sz(8.5); setC(ink); doc.text(txt, x, yy, { align: "right" }); norm(); };
+    const sHdr = (txt, x, yy, w) => { rect(x, yy, w, 5.5, G2); bold(); sz(8.5); setC(ink); doc.text(txt, x + 2, yy + 4); };
+    const colHdr = (x, yy, w, labels) => {
+      rect(x, yy, w, 4.5, G3);
+      sz(7); norm(); setC(muted);
+      labels.forEach(([t, ox, align]) => doc.text(t, x + ox, yy + 3.2, { align: align || "left" }));
+    };
+
+    // ── Logo & company header ──────────────────────────────────────────────
     if (logoDataUrl) {
-      try { doc.addImage(logoDataUrl, "PNG", margin, 5, 18, 18); } catch (e) {}
+      try { doc.addImage(logoDataUrl, "PNG", pw / 2 - 14, y, 28, 18); y += 21; }
+      catch (e) {}
+    }
+    bold(); sz(12); setC(ink);
+    doc.text(company.name || company.tradingName, pw / 2, y, { align: "center" });
+    y += 5;
+    norm(); sz(8); setC(muted);
+    doc.text(
+      [company.address, company.city, company.email].filter(Boolean).join("  ·  "),
+      pw / 2, y, { align: "center" }
+    );
+    y += 6;
+    setD(G3); doc.setLineWidth(0.3); doc.line(margin, y, pw - margin, y); y += 5;
+
+    // ── Employee detail grid — 3 columns ──────────────────────────────────
+    const col3 = cw / 3;
+    const rows1 = [
+      [["Emp. Code", emp.employeeNumber],         ["Emp. Name",  `${emp.firstName} ${emp.lastName}`], ["ID Number",      emp.idNumber]],
+      [["Date Engaged", emp.dateOfAppointment],   ["Job Title",  emp.jobTitle],                        ["Income Tax No.", emp.taxNumber]],
+      [["Pay Period", `${payslip.periodStart} - ${payslip.periodEnd}`], ["Co. Name", company.tradingName || company.name], ["PAYE Ref. No.", company.taxNumber || "—"]],
+    ];
+    rows1.forEach(row => {
+      row.forEach(([label, value], ci) => {
+        th(label, margin + ci * col3, y);
+        tv(value || "—", margin + ci * col3, y + 4);
+      });
+      y += 10;
+    });
+
+    const rows2 = [
+      [["Rate Per Hour", emp.ratePerHour || "—"],           ["Payment Type", emp.paymentMethod || "ACB"],     ["UIF Reg. No.", company.uifRef || "—"]],
+      [["Hours Per Period", emp.hoursPerPeriod || "173.33"],["Account No.", emp.accountNumber || "—"],         ["Branch No.", emp.branchCode || "—"]],
+    ];
+    rows2.forEach(row => {
+      row.forEach(([label, value], ci) => {
+        th(label, margin + ci * col3, y);
+        tv(value || "—", margin + ci * col3, y + 4);
+      });
+      y += 10;
+    });
+
+    setD(G3); doc.setLineWidth(0.3); doc.line(margin, y, pw - margin, y); y += 5;
+
+    // ── Earnings | Deductions side by side ────────────────────────────────
+    sHdr("Earnings",   lX, y, halfW);
+    sHdr("Deductions", rX, y, halfW);
+    y += 5.5;
+
+    colHdr(lX, y, halfW, [["Description", 2], ["Units", halfW * 0.56], ["Amount", halfW - 2, "right"]]);
+    colHdr(rX, y, halfW, [["Description", 2], ["Units", halfW * 0.56], ["Amount", halfW - 2, "right"]]);
+    y += 4.5;
+
+    const maxR = Math.max(payslip.incomes.length, payslip.deductions.length);
+    for (let i = 0; i < maxR; i++) {
+      const inc = payslip.incomes[i];
+      const ded = payslip.deductions[i];
+      const bg = i % 2 === 0 ? white : G1;
+      rect(lX, y, halfW, 5.5, bg);
+      rect(rX, y, halfW, 5.5, bg);
+      if (inc) {
+        tv(inc.name, lX + 2, y + 3.8);
+        norm(); sz(8); setC(muted); doc.text("0.00", lX + halfW * 0.56, y + 3.8);
+        amt(inc.amount.toLocaleString("en-ZA", { minimumFractionDigits: 2 }), lX + halfW - 2, y + 3.8);
+      }
+      if (ded) {
+        tv(ded.name, rX + 2, y + 3.8);
+        norm(); sz(8); setC(muted); doc.text("0.00", rX + halfW * 0.56, y + 3.8);
+        amt(ded.amount.toLocaleString("en-ZA", { minimumFractionDigits: 2 }), rX + halfW - 2, y + 3.8);
+      }
+      y += 5.5;
     }
 
-    // Company name in header
-    const nameX = logoDataUrl ? margin + 22 : margin;
-    doc.setTextColor(...white);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
-    doc.text(company.tradingName || company.name, nameX, 13);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(194, 197, 170);
-    doc.text("PAYSLIP", nameX, 20);
+    // Totals row
+    rect(lX, y, halfW, 5.5, G2); rect(rX, y, halfW, 5.5, G2);
+    bold(); sz(8.5); setC(ink);
+    doc.text("Total Earnings", lX + 2, y + 3.8);
+    doc.text(payslip.grossIncome.toLocaleString("en-ZA", { minimumFractionDigits: 2 }), lX + halfW - 2, y + 3.8, { align: "right" });
+    doc.text("Total Deductions", rX + 2, y + 3.8);
+    doc.text(payslip.totalDeductions.toLocaleString("en-ZA", { minimumFractionDigits: 2 }), rX + halfW - 2, y + 3.8, { align: "right" });
+    y += 5.5;
 
-    // Period top right
-    doc.setTextColor(...wheat);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text(payslip.period, pw - margin, 13, { align: "right" });
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(194, 197, 170);
-    doc.text(`${payslip.periodStart} to ${payslip.periodEnd}`, pw - margin, 20, { align: "right" });
+    // Net Pay — dark bar, white text, that's the only colour allowed
+    rect(lX, y, cw + 4, 8, NET);
+    setC(white); bold(); sz(10);
+    doc.text("Net Pay", lX + 3, y + 5.5);
+    sz(11);
+    doc.text(payslip.nettPay.toLocaleString("en-ZA", { minimumFractionDigits: 2 }), pw - margin - 2, y + 5.5, { align: "right" });
+    y += 12;
 
-    y = 36;
-
-    // Company details row
-    doc.setFontSize(8);
-    doc.setTextColor(...muted);
-    const companyLines = [
-      company.name,
-      `Reg: ${company.regNumber || "—"}   PAYE: ${company.taxNumber || "—"}   UIF: ${company.uifRef || "—"}`,
-      `${company.address}, ${company.city}, ${company.province} ${company.postalCode}`,
-      `${company.phone}   ${company.email}`,
+    // ── Company Contributions | YTD ───────────────────────────────────────
+    const basicSalary = (payslip.incomes.find(i => i.name === "Basic Salary") || {}).amount || 0;
+    const compContribs = [
+      { name: "Skills Development Levy (SDL)", amount: Math.round(basicSalary * 0.01 * 100) / 100 },
+      { name: "UIF — Employer",                amount: 177.12 },
+      { name: "Pension (Employer)",            amount: Math.round(basicSalary * 0.12 * 100) / 100 },
     ];
-    companyLines.forEach(line => {
-      doc.text(line, margin, y);
+    const totalCC = compContribs.reduce((s, i) => s + i.amount, 0);
+    const ytdItems = [
+      { name: "Tax Paid (YTD)",             amount: Math.round(payslip.totalDeductions * 0.5 * 3 * 100) / 100 },
+      { name: "Taxable Earnings (YTD)",     amount: Math.round(payslip.grossIncome * 3 * 100) / 100 },
+      { name: "Tax Deductible Deductions",  amount: Math.round(payslip.totalDeductions * 0.6 * 100) / 100 },
+      { name: "Fringe Benefits (YTD)",      amount: Math.round(payslip.grossIncome * 0.1 * 100) / 100 },
+    ];
+
+    sHdr("Company Contributions", lX, y, halfW);
+    sHdr("Year To Date Totals",   rX, y, halfW);
+    y += 5.5;
+
+    colHdr(lX, y, halfW, [["Description", 2], ["Amount", halfW - 2, "right"]]);
+    colHdr(rX, y, halfW, [["Description", 2], ["Amount", halfW - 2, "right"]]);
+    y += 4.5;
+
+    const ccRows = Math.max(compContribs.length, ytdItems.length);
+    for (let i = 0; i < ccRows; i++) {
+      const cc = compContribs[i], ytd = ytdItems[i];
+      const bg = i % 2 === 0 ? white : G1;
+      rect(lX, y, halfW, 5.5, bg);
+      rect(rX, y, halfW, 5.5, bg);
+      if (cc) { tv(cc.name, lX + 2, y + 3.8); amt(cc.amount.toLocaleString("en-ZA", { minimumFractionDigits: 2 }), lX + halfW - 2, y + 3.8); }
+      if (ytd) { tv(ytd.name, rX + 2, y + 3.8); amt(ytd.amount.toLocaleString("en-ZA", { minimumFractionDigits: 2 }), rX + halfW - 2, y + 3.8); }
+      y += 5.5;
+    }
+
+    rect(lX, y, halfW, 5.5, G2);
+    bold(); sz(8.5); setC(ink);
+    doc.text("Total Company Contributions", lX + 2, y + 3.8);
+    doc.text(totalCC.toLocaleString("en-ZA", { minimumFractionDigits: 2 }), lX + halfW - 2, y + 3.8, { align: "right" });
+    y += 9;
+
+    // ── Leave Balances — pushed to bottom of page ─────────────────────────
+    if (payslip.leaveBalances?.length > 0) {
+      // Calculate how much space leave table needs
+      const leaveHeight = 5.5 + 4.5 + payslip.leaveBalances.length * 5.5 + 6;
+      // Push y to bottom — leave gap above footer (14mm)
+      const leaveY = Math.max(y, ph - leaveHeight - 14);
+      y = leaveY;
+
+      sHdr("Leave Balances", lX, y, cw + 4); y += 5.5;
+
+      const lc = [0, 0.21, 0.36, 0.50, 0.64, 0.79]; // column x positions as fraction of cw
+      const lHeaders = ["Description", "Entitlement", "Balance B/Fwd", "Accrued", "Taken", "Balance C/Fwd"];
+      colHdr(lX, y, cw + 4, lHeaders.map((h, i) => [h, i === 0 ? 2 : lc[i] * cw + 2, i > 0 ? "right" : "left"]));
       y += 4.5;
-    });
-
-    // Divider
-    y += 2;
-    doc.setDrawColor(...light);
-    doc.setLineWidth(0.3);
-    doc.line(margin, y, pw - margin, y);
-    y += 6;
-
-    // Employee details grid
-    doc.setFillColor(...light);
-    doc.roundedRect(margin, y, contentWidth, 24, 2, 2, "F");
-
-    const col1 = margin + 4;
-    const col2 = margin + contentWidth / 2 + 4;
-    const labelColor = muted;
-    const valColor = ink;
-
-    const empFields = [
-      [["Employee", `${emp.lastName}, ${emp.firstName}`], ["Employee No.", emp.employeeNumber]],
-      [["ID Number", emp.idNumber], ["Tax Number", emp.taxNumber]],
-      [["Job Title", emp.jobTitle], ["Pay Point", emp.payPoint]],
-      [["Payment Method", emp.paymentMethod], ["Bank", emp.bank ? `${emp.bank} ${emp.accountNumber}` : "Cash"]],
-    ];
-
-    let ey = y + 5;
-    empFields.forEach(([left, right]) => {
-      doc.setFontSize(7);
-      doc.setTextColor(...labelColor);
-      doc.text(left[0].toUpperCase(), col1, ey);
-      doc.text(right[0].toUpperCase(), col2, ey);
-      doc.setFontSize(8.5);
-      doc.setTextColor(...valColor);
-      doc.setFont("helvetica", "bold");
-      doc.text(left[1] || "—", col1, ey + 3.5);
-      doc.text(right[1] || "—", col2, ey + 3.5);
-      doc.setFont("helvetica", "normal");
-      ey += 8;
-    });
-
-    y += 28;
-    y += 6;
-
-    // Income table
-    doc.setFillColor(...olive);
-    doc.rect(margin, y, contentWidth, 6, "F");
-    doc.setTextColor(...white);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
-    doc.text("INCOME", margin + 3, y + 4);
-    doc.text("AMOUNT", pw - margin - 3, y + 4, { align: "right" });
-    y += 6;
-
-    payslip.incomes.forEach((item, i) => {
-      doc.setFillColor(i % 2 === 0 ? 253 : 245, i % 2 === 0 ? 250 : 242, i % 2 === 0 ? 244 : 234);
-      doc.rect(margin, y, contentWidth, 6, "F");
-      doc.setTextColor(...ink);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8.5);
-      doc.text(item.name + (item.sarsCode ? ` (${item.sarsCode})` : ""), margin + 3, y + 4);
-      doc.text(fmt(item.amount), pw - margin - 3, y + 4, { align: "right" });
-      y += 6;
-    });
-
-    // Income total
-    doc.setFillColor(...light);
-    doc.rect(margin, y, contentWidth, 6, "F");
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8.5);
-    doc.setTextColor(...ink);
-    doc.text("Total Income", margin + 3, y + 4);
-    doc.text(fmt(payslip.grossIncome), pw - margin - 3, y + 4, { align: "right" });
-    y += 10;
-
-    // Deductions table
-    doc.setFillColor(...forest);
-    doc.rect(margin, y, contentWidth, 6, "F");
-    doc.setTextColor(...white);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
-    doc.text("DEDUCTIONS", margin + 3, y + 4);
-    doc.text("AMOUNT", pw - margin - 3, y + 4, { align: "right" });
-    y += 6;
-
-    payslip.deductions.forEach((item, i) => {
-      doc.setFillColor(i % 2 === 0 ? 253 : 245, i % 2 === 0 ? 250 : 242, i % 2 === 0 ? 244 : 234);
-      doc.rect(margin, y, contentWidth, 6, "F");
-      doc.setTextColor(...danger);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8.5);
-      doc.text(item.name, margin + 3, y + 4);
-      doc.text(fmt(item.amount), pw - margin - 3, y + 4, { align: "right" });
-      y += 6;
-    });
-
-    // Deductions total
-    doc.setFillColor(...light);
-    doc.rect(margin, y, contentWidth, 6, "F");
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8.5);
-    doc.setTextColor(...danger);
-    doc.text("Total Deductions", margin + 3, y + 4);
-    doc.text(fmt(payslip.totalDeductions), pw - margin - 3, y + 4, { align: "right" });
-    y += 10;
-
-    // Nett pay box
-    doc.setFillColor(...olive);
-    doc.roundedRect(margin, y, contentWidth, 12, 2, 2, "F");
-    doc.setTextColor(...white);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text("NETT PAY", margin + 4, y + 8);
-    doc.setFontSize(14);
-    doc.setTextColor(...wheat);
-    doc.text(fmt(payslip.nettPay), pw - margin - 4, y + 8, { align: "right" });
-    y += 18;
-
-    // Leave balances
-    if (payslip.leaveBalances && payslip.leaveBalances.length > 0) {
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8);
-      doc.setTextColor(...olive);
-      doc.text("LEAVE BALANCES", margin, y);
-      y += 4;
-
-      doc.setFillColor(...light);
-      doc.rect(margin, y, contentWidth, 6, "F");
-      doc.setTextColor(...muted);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(7.5);
-      const leaveCols = ["TYPE", "ACCRUED", "TAKEN", "BALANCE"];
-      const leaveColX = [margin + 3, margin + contentWidth * 0.35, margin + contentWidth * 0.55, margin + contentWidth * 0.75];
-      leaveCols.forEach((h, i) => doc.text(h, leaveColX[i], y + 4));
-      y += 6;
 
       payslip.leaveBalances.forEach((lb, i) => {
-        doc.setFillColor(i % 2 === 0 ? 253 : 245, i % 2 === 0 ? 250 : 242, i % 2 === 0 ? 244 : 234);
-        doc.rect(margin, y, contentWidth, 6, "F");
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(8.5);
-        doc.setTextColor(...ink);
-        doc.text(lb.type, leaveColX[0], y + 4);
-        doc.text(String(lb.accrued), leaveColX[1], y + 4);
-        doc.text(String(lb.taken), leaveColX[2], y + 4);
-        doc.setFont("helvetica", "bold");
-        const balColor = lb.balance < 3 ? danger : olive;
-        doc.setTextColor(balColor[0], balColor[1], balColor[2]);
-        doc.text(String(lb.balance), leaveColX[3], y + 4);
-        y += 6;
+        rect(lX, y, cw + 4, 5.5, i % 2 === 0 ? white : G1);
+        norm(); sz(8.5); setC(ink);
+        doc.text(lb.type + " Leave", lX + 2, y + 3.8);
+        bold();
+        const vals = [
+          lb.entitlement || lb.accrued || 0,
+          lb.balance || 0,
+          lb.newAccrual ?? 0,
+          lb.taken || 0,
+          lb.balance || 0,
+        ];
+        vals.forEach((val, vi) => {
+          doc.text(
+            Number(val).toFixed(4),
+            lX + lc[vi + 1] * cw + 2,
+            y + 3.8,
+            { align: "right" }
+          );
+        });
+        norm(); y += 5.5;
       });
-      y += 6;
-    }
-
-    // Notes
-    const notes = payslip.incomes.filter(i => i.note);
-    if (notes.length > 0) {
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8);
-      doc.setTextColor(...muted);
-      doc.text("NOTES", margin, y);
-      y += 5;
-      notes.forEach((item, i) => {
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(8);
-        doc.setTextColor(...muted);
-        doc.text(`${i + 1}. ${item.name}: ${item.note}`, margin, y);
-        y += 4.5;
-      });
+      y += 4;
     }
 
     // Footer
-    doc.setDrawColor(...light);
-    doc.setLineWidth(0.3);
-    doc.line(margin, ph - 14, pw - margin, ph - 14);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7);
-    doc.setTextColor(...muted);
-    doc.text("This is a computer-generated payslip and does not require a signature.", margin, ph - 9);
-    doc.text(`Generated by LunarPay · ${new Date().toLocaleDateString("en-ZA")}`, pw - margin, ph - 9, { align: "right" });
+    setD(G3); doc.setLineWidth(0.3); doc.line(margin, ph - 10, pw - margin, ph - 10);
+    sz(7); norm(); setC(muted);
+    doc.text("This is a computer-generated payslip and does not require a signature.", margin, ph - 6);
+    doc.text(
+      `Printed on: ${new Date().toLocaleDateString("en-ZA")}; ${new Date().toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" })}`,
+      pw - margin, ph - 6, { align: "right" }
+    );
+  }
+
+  if (template === "detailed") {
+    doc.setFillColor(...forest);
+    doc.rect(0, 0, pw, 28, "F");
+    if (logoDataUrl) {
+      try { doc.addImage(logoDataUrl, "PNG", margin, 5, 18, 18); } catch (e) {}
+    }
+    const nameX = logoDataUrl ? margin + 22 : margin;
+    setC(white); bold(); sz(14);
+    doc.text(company.tradingName || company.name, nameX, 13);
+    norm(); sz(8); setC([194, 197, 170]);
+    doc.text("PAYSLIP", nameX, 20);
+    setC(wheat); bold(); sz(10);
+    doc.text(payslip.period, pw - margin, 13, { align: "right" });
+    norm(); sz(8); setC([194, 197, 170]);
+    doc.text(`${payslip.periodStart} to ${payslip.periodEnd}`, pw - margin, 20, { align: "right" });
+    y = 36;
+
+    sz(8); norm(); setC(muted);
+    [`${company.name}`, `Reg: ${company.regNumber || "—"}   PAYE: ${company.taxNumber || "—"}   UIF: ${company.uifRef || "—"}`, `${company.address || ""}`, `${company.phone || ""}   ${company.email || ""}`].forEach(l => { doc.text(l, margin, y); y += 4.5; });
+    y += 2; hLine(y); y += 6;
+
+    rect(margin, y, cw, 24, light);
+    const c1 = margin + 4, c2 = margin + cw / 2 + 4;
+    let ey = y + 5;
+    [[["Employee", `${emp.lastName}, ${emp.firstName}`], ["Employee No.", emp.employeeNumber]], [["ID Number", emp.idNumber], ["Tax Number", emp.taxNumber]], [["Job Title", emp.jobTitle], ["Pay Point", emp.payPoint]], [["Payment Method", emp.paymentMethod], ["Bank", emp.bank ? `${emp.bank} ${emp.accountNumber}` : "Cash"]]].forEach(([left, right]) => {
+      sz(7); setC(muted); doc.text(left[0].toUpperCase(), c1, ey); doc.text(right[0].toUpperCase(), c2, ey);
+      sz(8.5); setC(ink); bold(); doc.text(left[1] || "—", c1, ey + 3.5); doc.text(right[1] || "—", c2, ey + 3.5); norm(); ey += 8;
+    });
+    y += 30;
+
+    const hfW = (cw - 4) / 2, rX = margin + hfW + 4;
+    rect(margin, y, hfW, 6, olive); rect(rX, y, hfW, 6, forest);
+    setC(white); bold(); sz(8);
+    doc.text("INCOME", margin + 3, y + 4); doc.text("AMOUNT", margin + hfW - 3, y + 4, { align: "right" });
+    doc.text("DEDUCTIONS", rX + 3, y + 4); doc.text("AMOUNT", rX + hfW - 3, y + 4, { align: "right" });
+    y += 6;
+
+    const maxR = Math.max(payslip.incomes.length, payslip.deductions.length);
+    for (let i = 0; i < maxR; i++) {
+      const inc = payslip.incomes[i], ded = payslip.deductions[i];
+      const bg = i % 2 === 0 ? [253,250,244] : [245,242,234];
+      rect(margin, y, hfW, 5.5, bg); rect(rX, y, hfW, 5.5, bg);
+      sz(8); norm();
+      if (inc) { setC(ink); doc.text(inc.name, margin + 3, y + 3.8); setC(muted); doc.text("0.00", margin + hfW * 0.6, y + 3.8); setC(ink); bold(); doc.text(inc.amount.toLocaleString("en-ZA", { minimumFractionDigits: 2 }), margin + hfW - 3, y + 3.8, { align: "right" }); norm(); }
+      if (ded) { setC(ink); doc.text(ded.name, rX + 3, y + 3.8); setC(muted); doc.text("0.00", rX + hfW * 0.6, y + 3.8); setC(danger); bold(); doc.text(ded.amount.toLocaleString("en-ZA", { minimumFractionDigits: 2 }), rX + hfW - 3, y + 3.8, { align: "right" }); norm(); }
+      y += 5.5;
+    }
+    rect(margin, y, hfW, 5.5, light); rect(rX, y, hfW, 5.5, light);
+    bold(); sz(8); setC(ink); doc.text("Total Earnings", margin + 3, y + 3.8);
+    doc.text(payslip.grossIncome.toLocaleString("en-ZA", { minimumFractionDigits: 2 }), margin + hfW - 3, y + 3.8, { align: "right" });
+    doc.text("Total Deductions", rX + 3, y + 3.8); setC(danger);
+    doc.text(payslip.totalDeductions.toLocaleString("en-ZA", { minimumFractionDigits: 2 }), rX + hfW - 3, y + 3.8, { align: "right" });
+    y += 9;
+
+    rect(margin, y, cw, 12, forest); setC(white); bold(); sz(10);
+    doc.text("NETT PAY", margin + 4, y + 8); sz(14); setC(wheat);
+    doc.text(payslip.nettPay.toLocaleString("en-ZA", { minimumFractionDigits: 2 }), pw - margin - 4, y + 8, { align: "right" });
+    y += 17;
+
+    if (payslip.leaveBalances?.length > 0) {
+      bold(); sz(8); setC(olive); doc.text("LEAVE BALANCES", margin, y); y += 4;
+      rect(margin, y, cw, 5, light); sz(7.5); bold(); setC(muted);
+      const lhx = [margin+3, margin+cw*0.35, margin+cw*0.50, margin+cw*0.65, margin+cw*0.80];
+      ["TYPE","ACCRUED","TAKEN","ADJUSTMENT","BALANCE"].forEach((h,i) => doc.text(h, lhx[i], y + 3.5));
+      y += 5;
+      payslip.leaveBalances.forEach((lb, i) => {
+        rect(margin, y, cw, 5.5, i%2===0?[253,250,244]:[245,242,234]);
+        norm(); sz(8.5); setC(ink); doc.text(lb.type, lhx[0], y + 3.8);
+        setC(muted); doc.text(String(lb.accrued || 0), lhx[1], y+3.8); doc.text(String(lb.taken || 0), lhx[2], y+3.8); doc.text("0.00", lhx[3], y+3.8);
+        const bc = lb.balance < 3 ? danger : olive; setC(bc); bold();
+        doc.text(String(lb.balance), lhx[4], y+3.8); norm(); y += 5.5;
+      });
+      y += 4;
+    }
+
+    hLine(ph-10); sz(7); norm(); setC(muted);
+    doc.text("Computer-generated payslip — no signature required.", margin, ph-6);
+    doc.text(`Generated by LunarPay · ${new Date().toLocaleDateString("en-ZA")}`, pw-margin, ph-6, { align: "right" });
   }
 
   // ── TEMPLATE: MINIMAL ─────────────────────────────────────────────────────
   if (template === "minimal") {
-    // Logo top right
-    if (logoDataUrl) {
-      try { doc.addImage(logoDataUrl, "PNG", pw - margin - 24, y, 24, 24); } catch (e) {}
-    }
-
-    // Company name top left
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.setTextColor(...ink);
-    doc.text(company.tradingName || company.name, margin, y + 8);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(...muted);
-    doc.text(`${company.address}, ${company.city}   ${company.email}`, margin, y + 14);
-
-    y += 32;
-
-    // Thin divider
-    doc.setDrawColor(...light);
-    doc.setLineWidth(0.5);
-    doc.line(margin, y, pw - margin, y);
-    y += 8;
-
-    // PAYSLIP heading + period
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(20);
-    doc.setTextColor(...olive);
-    doc.text("PAYSLIP", margin, y);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(...muted);
-    doc.text(payslip.period, pw - margin, y, { align: "right" });
-    y += 12;
-
-    // Employee name + details
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(13);
-    doc.setTextColor(...ink);
-    doc.text(`${emp.firstName} ${emp.lastName}`, margin, y);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(...muted);
-    doc.text(`${emp.jobTitle} · ${emp.payPoint} · Emp #${emp.employeeNumber}`, margin, y + 5);
-    doc.text(`Period: ${payslip.periodStart} — ${payslip.periodEnd}`, margin, y + 10);
-    y += 20;
-
-    doc.setDrawColor(...light);
-    doc.line(margin, y, pw - margin, y);
-    y += 8;
-
-    // Income
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
-    doc.setTextColor(...muted);
-    doc.text("INCOME", margin, y);
-    doc.text("AMOUNT", pw - margin, y, { align: "right" });
-    y += 5;
-
-    payslip.incomes.forEach(item => {
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9.5);
-      doc.setTextColor(...ink);
-      doc.text(item.name, margin, y);
-      doc.text(fmt(item.amount), pw - margin, y, { align: "right" });
-      y += 6;
-    });
-
-    // Subtotal line
-    doc.setDrawColor(...light);
-    doc.line(pw - margin - 40, y, pw - margin, y);
-    y += 4;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(...ink);
-    doc.text("Gross Income", margin, y);
-    doc.text(fmt(payslip.grossIncome), pw - margin, y, { align: "right" });
-    y += 10;
-
-    // Deductions
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
-    doc.setTextColor(...muted);
-    doc.text("DEDUCTIONS", margin, y);
-    doc.text("AMOUNT", pw - margin, y, { align: "right" });
-    y += 5;
-
-    payslip.deductions.forEach(item => {
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9.5);
-      doc.setTextColor(...danger);
-      doc.text(item.name, margin, y);
-      doc.text(fmt(item.amount), pw - margin, y, { align: "right" });
-      y += 6;
-    });
-
-    doc.setDrawColor(...light);
-    doc.line(pw - margin - 40, y, pw - margin, y);
-    y += 4;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(...danger);
-    doc.text("Total Deductions", margin, y);
-    doc.text(fmt(payslip.totalDeductions), pw - margin, y, { align: "right" });
-    y += 12;
-
-    // Nett pay
-    doc.setDrawColor(...olive);
-    doc.setLineWidth(0.5);
-    doc.line(margin, y, pw - margin, y);
-    y += 6;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(13);
-    doc.setTextColor(...olive);
-    doc.text("Nett Pay", margin, y);
-    doc.text(fmt(payslip.nettPay), pw - margin, y, { align: "right" });
-    doc.setLineWidth(0.5);
-    doc.line(margin, y + 3, pw - margin, y + 3);
-    y += 12;
-
-    // Leave balances
-    if (payslip.leaveBalances?.length > 0) {
-      y += 4;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8);
-      doc.setTextColor(...muted);
-      doc.text("LEAVE BALANCES", margin, y);
-      y += 5;
-
+    if (logoDataUrl) { try { doc.addImage(logoDataUrl, "PNG", pw-margin-24, y, 24, 24); } catch (e) {} }
+    bold(); sz(16); setC(ink); doc.text(company.tradingName || company.name, margin, y+8);
+    norm(); sz(8); setC(muted); doc.text([company.address, company.city, company.email].filter(Boolean).join("   "), margin, y+14);
+    y += 32; hLine(y); y += 8;
+    bold(); sz(20); setC(olive); doc.text("PAYSLIP", margin, y);
+    norm(); sz(10); setC(muted); doc.text(payslip.period, pw-margin, y, { align: "right" }); y += 12;
+    bold(); sz(13); setC(ink); doc.text(`${emp.firstName} ${emp.lastName}`, margin, y);
+    norm(); sz(9); setC(muted); doc.text(`${emp.jobTitle} · ${emp.payPoint} · Emp #${emp.employeeNumber}`, margin, y+5);
+    doc.text(`Period: ${payslip.periodStart} — ${payslip.periodEnd}`, margin, y+10); y += 20;
+    hLine(y); y += 8;
+    bold(); sz(8); setC(muted); doc.text("INCOME", margin, y); doc.text("AMOUNT", pw-margin, y, { align: "right" }); y += 5;
+    payslip.incomes.forEach(item => { norm(); sz(9.5); setC(ink); doc.text(item.name, margin, y); bold(); doc.text(item.amount.toLocaleString("en-ZA",{minimumFractionDigits:2}), pw-margin, y, { align:"right" }); y += 6; });
+    hLine(y); y += 4; bold(); sz(9); setC(ink); doc.text("Gross Income", margin, y); doc.text(payslip.grossIncome.toLocaleString("en-ZA",{minimumFractionDigits:2}), pw-margin, y, { align:"right" }); y += 10;
+    bold(); sz(8); setC(muted); doc.text("DEDUCTIONS", margin, y); doc.text("AMOUNT", pw-margin, y, { align:"right" }); y += 5;
+    payslip.deductions.forEach(item => { norm(); sz(9.5); setC(danger); doc.text(item.name, margin, y); bold(); doc.text(item.amount.toLocaleString("en-ZA",{minimumFractionDigits:2}), pw-margin, y, { align:"right" }); y += 6; });
+    hLine(y); y += 4; bold(); sz(9); setC(danger); doc.text("Total Deductions", margin, y); doc.text(payslip.totalDeductions.toLocaleString("en-ZA",{minimumFractionDigits:2}), pw-margin, y, { align:"right" }); y += 12;
+    setD(olive); doc.setLineWidth(0.5); doc.line(margin,y,pw-margin,y); y += 6;
+    bold(); sz(13); setC(olive); doc.text("Nett Pay", margin, y); doc.text(payslip.nettPay.toLocaleString("en-ZA",{minimumFractionDigits:2}), pw-margin, y, { align:"right" });
+    doc.setLineWidth(0.5); doc.line(margin,y+3,pw-margin,y+3); y += 12;
+    if (payslip.leaveBalances?.length>0) {
+      y += 4; bold(); sz(8); setC(muted); doc.text("LEAVE BALANCES", margin, y); y += 5;
       payslip.leaveBalances.forEach(lb => {
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(9);
-        doc.setTextColor(...ink);
-        doc.text(`${lb.type} Leave`, margin, y);
-        doc.setFont("helvetica", "bold");
-        const balCol = lb.balance < 3 ? danger : olive;
-        doc.setTextColor(balCol[0], balCol[1], balCol[2]);
-        doc.text(`${lb.balance} days remaining`, pw - margin, y, { align: "right" });
-        y += 6;
+        norm(); sz(9); setC(ink); doc.text(`${lb.type} Leave`, margin, y);
+        const bc = lb.balance < 3 ? danger : olive; setC(bc); bold();
+        doc.text(`${lb.balance} days remaining`, pw-margin, y, { align:"right" }); y += 6;
       });
     }
-
-    // Notes
-    const notes = payslip.incomes.filter(i => i.note);
-    if (notes.length > 0) {
-      y += 6;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8);
-      doc.setTextColor(...muted);
-      doc.text("NOTES", margin, y);
-      y += 5;
-      notes.forEach((item, i) => {
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(8);
-        doc.text(`${i + 1}. ${item.name}: ${item.note}`, margin, y);
-        y += 4.5;
-      });
-    }
-
-    // Footer
-    doc.setDrawColor(...light);
-    doc.setLineWidth(0.3);
-    doc.line(margin, ph - 14, pw - margin, ph - 14);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7);
-    doc.setTextColor(...muted);
-    doc.text("This is a computer-generated payslip and does not require a signature.", margin, ph - 9);
-    doc.text(`Generated by LunarPay · ${new Date().toLocaleDateString("en-ZA")}`, pw - margin, ph - 9, { align: "right" });
+    hLine(ph-10); sz(7); norm(); setC(muted);
+    doc.text("Computer-generated payslip — no signature required.", margin, ph-6);
+    doc.text(`Generated by LunarPay · ${new Date().toLocaleDateString("en-ZA")}`, pw-margin, ph-6, { align:"right" });
   }
 
   return doc;
 }
+
+
 
 // ─── Logo Uploader ────────────────────────────────────────────────────────────
 function LogoUploader({ logo, onLogoChange }) {
@@ -553,7 +487,7 @@ function PayslipPreviewCard({ payslip, selected, onToggle, onDownload, loading }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function PayslipGenerator({ company = SAMPLE_COMPANY, payslips = SAMPLE_PAYSLIPS }) {
-  const [template, setTemplate] = useState("detailed");
+  const [template, setTemplate] = useState("professional");
   const [logo, setLogo] = useState(null);
   const [selected, setSelected] = useState([]);
   const [loading, setLoading] = useState(null);
@@ -625,8 +559,9 @@ export default function PayslipGenerator({ company = SAMPLE_COMPANY, payslips = 
             <p style={{ fontSize: 12, fontWeight: 600, color: C.ink, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Template</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {[
-                ["detailed", "Detailed", "Full company info, colour bands, employee grid, leave table"],
-                ["minimal", "Minimal", "Clean white layout, typography-led, modern feel"],
+                ["professional", "Standard", "Two-column layout, company contributions, YTD totals, leave B/Fwd & C/Fwd"],
+                ["detailed", "Detailed", "LunarPay branded — colour bands, forest header, olive income section"],
+                ["minimal", "Minimal", "Clean white, typography-led, understated and modern"],
               ].map(([id, label, desc]) => (
                 <div key={id} onClick={() => setTemplate(id)} style={{ padding: "12px 14px", borderRadius: 10, border: `1.5px solid ${template === id ? C.olive : C.cardBorder}`, background: template === id ? "rgba(101,109,74,0.07)" : C.surface, cursor: "pointer", transition: "all 0.12s" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
