@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { CompanySwitcher, INITIAL_COMPANIES } from "./modules/CompanySwitcher.jsx";
+import Dashboard from "./modules/Dashboard.jsx";
 import PayRuns from "./modules/PayRuns.jsx";
 import Leave from "./modules/Leave.jsx";
 import Reports from "./modules/Reports.jsx";
@@ -515,6 +517,7 @@ function EmployeeProfile({ employee, onBack, onTerminate }) {
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
   const navItems = [
+    { id: "dashboard", label: "Dashboard", icon: "ti-layout-dashboard" },
     { id: "employees", label: "Employees", icon: "ti-users" },
     { id: "payruns", label: "Pay Runs", icon: "ti-cash" },
     { id: "leave", label: "Leave", icon: "ti-calendar-event" },
@@ -523,17 +526,22 @@ function EmployeeProfile({ employee, onBack, onTerminate }) {
     { id: "settings", label: "Settings", icon: "ti-settings" },
   ];
 
-function Sidebar({ active, onNav }) {
+function Sidebar({ active, onNav, companies, activeCompany, onCompanySwitch, onAddCompany }) {
   return (
     <div style={{ width: 224, background: C.sidebar, borderRight: `1px solid ${C.sidebarBorder}`, display: "flex", flexDirection: "column", flexShrink: 0 }}>
       {/* Logo */}
-      <div style={{ padding: "22px 20px 18px", borderBottom: `1px solid ${C.sidebarBorder}` }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <OrbitalLogo size={28} light />
-          <div>
-            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 17, fontWeight: 700, color: "#E8E4D8", letterSpacing: "-0.02em", lineHeight: 1.1 }}>LunarPay</div>
-            <div style={{ fontSize: 10, color: C.sageMid, marginTop: 2, letterSpacing: "0.04em" }}>Demo Company</div>
-          </div>
+      <div style={{ padding: "18px 14px 14px", borderBottom: `1px solid ${C.sidebarBorder}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, paddingLeft: 2 }}>
+          <OrbitalLogo size={26} light />
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, color: "#E8E4D8", letterSpacing: "-0.02em" }}>LunarPay</div>
+        </div>
+        <div style={{ position: "relative" }}>
+          <CompanySwitcher
+            companies={companies}
+            activeCompany={activeCompany}
+            onSwitch={(id) => { onCompanySwitch(id); }}
+            onAdd={(company) => { onAddCompany(company); }}
+          />
         </div>
       </div>
 
@@ -622,12 +630,15 @@ function EmployeeList({ employees, onSelect }) {
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function LunarPay() {
+  const [companies, setCompanies] = useState(INITIAL_COMPANIES);
+  const [activeCompany, setActiveCompany] = useState("co-001");
+  const activeCompanyData = companies.find(c => c.id === activeCompany);
   const [employees, setEmployees] = useState(SAMPLE_EMPLOYEES);
   const [showAdd, setShowAdd] = useState(false);
   const [selected, setSelected] = useState(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
-  const [activeNav, setActiveNav] = useState("employees");
+  const [activeNav, setActiveNav] = useState("dashboard");
 
   const filtered = employees.filter(e => {
     const q = search.toLowerCase();
@@ -648,20 +659,27 @@ export default function LunarPay() {
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden", fontFamily: FONT_BODY }}>
       <style>{GLOBAL_CSS}</style>
-      <Sidebar active={activeNav} onNav={setActiveNav} />
+      <Sidebar
+        active={activeNav}
+        onNav={setActiveNav}
+        companies={companies}
+        activeCompany={activeCompany}
+        onCompanySwitch={(id) => { setActiveCompany(id); setSelected(null); }}
+        onAddCompany={(company) => setCompanies(p => [...p, company])}
+      />
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", ...DOTS_BG }}>
         {/* Top bar */}
         <div style={{ padding: "18px 32px", borderBottom: `1px solid ${C.cardBorder}`, background: "rgba(245,242,234,0.9)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
           <div>
             <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 700, color: C.ink, lineHeight: 1.1 }}>
-              {activeNav === "payruns" ? "Pay Runs" : activeNav === "leave" ? "Leave" : activeNav === "reports" ? "Reports" : activeNav === "filing" ? "Self-Service" : activeNav === "settings" ? "Settings" : selected ? `${selected.lastName}, ${selected.firstName}` : "Employees"}
+              {activeNav === "dashboard" ? "Dashboard" : activeNav === "payruns" ? "Pay Runs" : activeNav === "leave" ? "Leave" : activeNav === "reports" ? "Reports" : activeNav === "filing" ? "Self-Service" : activeNav === "settings" ? "Settings" : selected ? `${selected.lastName}, ${selected.firstName}` : "Employees"}
             </h1>
             <p style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>
-              {activeNav === "payruns" ? "Process and manage payroll runs" : activeNav === "leave" ? "Manage leave types, balances and processing" : activeNav === "reports" ? "Generate and export payroll reports" : activeNav === "filing" ? "Employee portal, approvals and payslip release" : activeNav === "settings" ? "Users, company profile, billing and audit log" : selected ? `${selected.jobTitle} · ${selected.payPoint}` : `${activeCount} active · ${inactiveCount} inactive`}
+              {activeNav === "dashboard" ? `${activeCompanyData?.tradingName || activeCompanyData?.name || "Company"} · May 2025` : activeNav === "payruns" ? "Process and manage payroll runs" : activeNav === "leave" ? "Manage leave types, balances and processing" : activeNav === "reports" ? "Generate and export payroll reports" : activeNav === "filing" ? "Employee portal, approvals and payslip release" : activeNav === "settings" ? "Users, company profile, billing and audit log" : selected ? `${selected.jobTitle} · ${selected.payPoint}` : `${activeCount} active · ${inactiveCount} inactive`}
             </p>
           </div>
-          {!selected && (
+          {!selected && activeNav === "employees" && (
             <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
               <div style={{ position: "relative" }}>
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search employees…" style={{ width: 230, paddingLeft: 36, height: 38, fontSize: 13 }} />
@@ -678,12 +696,14 @@ export default function LunarPay() {
         </div>
 
         {/* Main content */}
-        {activeNav === "payruns" ? (
+        {activeNav === "dashboard" ? (
+          <Dashboard onNavigate={setActiveNav} />
+        ) : activeNav === "payruns" ? (
           <PayRuns />
         ) : activeNav === "leave" ? (
           <Leave />
         ) : activeNav === "reports" ? (
-          <Reports />
+          <Reports companies={companies} activeCompany={activeCompany} />
         ) : activeNav === "filing" ? (
           <SelfService />
         ) : activeNav === "settings" ? (

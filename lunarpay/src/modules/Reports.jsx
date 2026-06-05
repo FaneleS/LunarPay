@@ -102,14 +102,14 @@ const CheckItem = ({ checked, onChange, label }) => (
 );
 
 // ─── Report Preview Tables ────────────────────────────────────────────────────
-function EmployeeBasicInfoTable({ employees, fields }) {
+function EmployeeBasicInfoTable({ employees, fields, multiCompany }) {
   const showField = (f) => fields.includes(f);
   return (
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
         <thead>
           <tr style={{ background: C.surface }}>
-            {["#", "Last Name", "First Name", showField("Pay Point") && "Pay Point", showField("Job Title") && "Job Title", showField("ID Number") && "ID Number", showField("Email") && "Email", showField("Date of Appointment") && "Appointed", showField("Gender") && "Gender"].filter(Boolean).map(h => (
+            {["#", multiCompany && "Company", "Last Name", "First Name", showField("Pay Point") && "Pay Point", showField("Job Title") && "Job Title", showField("ID Number") && "ID Number", showField("Email") && "Email", showField("Date of Appointment") && "Appointed", showField("Gender") && "Gender"].filter(Boolean).map(h => (
               <th key={h} style={{ padding: "9px 14px", textAlign: "left", fontSize: 11, color: C.sageMid, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, borderBottom: `1px solid ${C.cardBorder}`, whiteSpace: "nowrap" }}>{h}</th>
             ))}
           </tr>
@@ -118,12 +118,13 @@ function EmployeeBasicInfoTable({ employees, fields }) {
           {employees.map((e, i) => {
             const av = getAvatarColor(e.firstName + e.lastName);
             return (
-              <tr key={e.id} style={{ borderBottom: `1px solid ${C.cardBorder}` }}
+              <tr key={e.uid || e.id} style={{ borderBottom: `1px solid ${C.cardBorder}` }}
                 onMouseEnter={ev => ev.currentTarget.style.background = C.surface}
                 onMouseLeave={ev => ev.currentTarget.style.background = "transparent"}>
                 <td style={{ padding: "10px 14px" }}>
                   <div style={{ width: 28, height: 28, borderRadius: "50%", background: av.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: av.text }}>{initials(e.firstName, e.lastName)}</div>
                 </td>
+                {multiCompany && <td style={{ padding: "10px 14px" }}><span style={{ fontSize: 11, color: C.info, background: C.infoBg, padding: "2px 8px", borderRadius: 20, fontWeight: 500, whiteSpace: "nowrap" }}>{e.companyName}</span></td>}
                 <td style={{ padding: "10px 14px", color: C.ink, fontWeight: 500 }}>{e.lastName}</td>
                 <td style={{ padding: "10px 14px", color: C.ink }}>{e.firstName}</td>
                 {showField("Pay Point") && <td style={{ padding: "10px 14px", color: C.muted }}>{e.payPoint}</td>}
@@ -299,7 +300,7 @@ function LeaveLiabilitiesTable({ employees }) {
 }
 
 // ─── Report Builder ───────────────────────────────────────────────────────────
-function ReportBuilder({ report, onBack }) {
+function ReportBuilder({ report, onBack, companies, activeCompany }) {
   const [dateFrom, setDateFrom] = useState("2025-04-01");
   const [dateTo, setDateTo] = useState("2025-05-31");
   const [periodFrom, setPeriodFrom] = useState("2025-04-30");
@@ -307,6 +308,7 @@ function ReportBuilder({ report, onBack }) {
   const [filterPayPoint, setFilterPayPoint] = useState("All");
   const [filterFreq, setFilterFreq] = useState("All");
   const [filterStatus, setFilterStatus] = useState("All");
+  const [selectedCompanies, setSelectedCompanies] = useState([activeCompany || "co-001"]);
   const [additionalFields, setAdditionalFields] = useState(["Pay Point", "Job Title", "Email"]);
   const [selectedTransactions, setSelectedTransactions] = useState(["Basic Salary", "Commission"]);
   const [passwordProtect, setPasswordProtect] = useState(false);
@@ -318,7 +320,20 @@ function ReportBuilder({ report, onBack }) {
   const allFields = () => setAdditionalFields([...ADDITIONAL_FIELDS]);
   const noneFields = () => setAdditionalFields([]);
 
-  const filteredEmployees = EMPLOYEES.filter(e => {
+  const toggleCompany = (id) => setSelectedCompanies(p =>
+    p.includes(id) ? p.filter(x => x !== id) : [...p, id]
+  );
+  const allCompanies = () => setSelectedCompanies(companies.map(c => c.id));
+  const noCompanies = () => setSelectedCompanies([]);
+
+  // In a real app each company has its own employees.
+  // Here we simulate by duplicating/tagging employees per company.
+  const allEmployees = companies.flatMap(co =>
+    EMPLOYEES.map(e => ({ ...e, companyId: co.id, companyName: co.tradingName || co.name, uid: `${co.id}-${e.id}` }))
+  );
+
+  const filteredEmployees = allEmployees.filter(e => {
+    if (!selectedCompanies.includes(e.companyId)) return false;
     if (filterPayPoint !== "All" && e.payPoint !== filterPayPoint) return false;
     if (filterFreq !== "All" && e.payFrequency !== filterFreq) return false;
     if (filterStatus !== "All" && e.status !== filterStatus) return false;
@@ -356,6 +371,35 @@ function ReportBuilder({ report, onBack }) {
               <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, color: C.ink }}>{report.label}</h2>
             </div>
             <p style={{ fontSize: 12, color: C.muted, lineHeight: 1.6 }}>{report.description}</p>
+          </div>
+
+          {/* Company selector */}
+          <div style={{ background: C.card, border: `1px solid ${C.cardBorder}`, borderRadius: 12, padding: "16px 18px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <p style={{ fontSize: 12, fontWeight: 600, color: C.ink, textTransform: "uppercase", letterSpacing: "0.06em" }}>Companies</p>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={allCompanies} style={{ background: "none", border: "none", fontSize: 11, color: C.olive, cursor: "pointer", fontFamily: FONT_BODY, fontWeight: 500 }}>All</button>
+                <span style={{ color: C.sageMid }}>·</span>
+                <button onClick={noCompanies} style={{ background: "none", border: "none", fontSize: 11, color: C.muted, cursor: "pointer", fontFamily: FONT_BODY }}>None</button>
+              </div>
+            </div>
+            {companies.map(co => {
+              const isSelected = selectedCompanies.includes(co.id);
+              return (
+                <label key={co.id} onClick={() => toggleCompany(co.id)} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, cursor: "pointer", userSelect: "none" }}>
+                  <div style={{ width: 16, height: 16, borderRadius: 4, border: `1.5px solid ${isSelected ? C.olive : C.cardBorder}`, background: isSelected ? C.olive : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.15s" }}>
+                    {isSelected && <span style={{ color: "#fff", fontSize: 9, fontWeight: 700 }}>✓</span>}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: C.ink, fontWeight: isSelected ? 500 : 400 }}>{co.tradingName || co.name}</div>
+                    <div style={{ fontSize: 11, color: C.sageMid }}>{co.employeeCount} employees · {co.industry}</div>
+                  </div>
+                </label>
+              );
+            })}
+            {selectedCompanies.length === 0 && (
+              <p style={{ fontSize: 11, color: C.danger, marginTop: 4 }}>Select at least one company</p>
+            )}
           </div>
 
           {/* Date Range */}
@@ -447,7 +491,7 @@ function ReportBuilder({ report, onBack }) {
             {exported && (
               <div style={{ marginTop: 10, padding: "8px 12px", background: C.activeBg, borderRadius: 8, fontSize: 12, color: C.active, display: "flex", alignItems: "center", gap: 6 }}>
                 <i className="ti ti-check" aria-hidden="true" />
-                {exported} report generated for {filteredEmployees.length} employee{filteredEmployees.length !== 1 ? "s" : ""}
+                {exported} report generated — {filteredEmployees.length} employee{filteredEmployees.length !== 1 ? "s" : ""} from {selectedCompanies.length} compan{selectedCompanies.length !== 1 ? "ies" : "y"}
               </div>
             )}
           </div>
@@ -458,7 +502,7 @@ function ReportBuilder({ report, onBack }) {
           <div style={{ background: C.card, border: `1px solid ${C.cardBorder}`, borderRadius: 12, overflow: "hidden" }}>
             <div style={{ padding: "14px 20px", background: C.surface, borderBottom: `1px solid ${C.cardBorder}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>
-                {showPreview ? `Preview — ${filteredEmployees.length} employee${filteredEmployees.length !== 1 ? "s" : ""}` : "Configure report settings to preview"}
+                {showPreview ? `Preview — ${filteredEmployees.length} employee${filteredEmployees.length !== 1 ? "s" : ""} across ${selectedCompanies.length} compan${selectedCompanies.length !== 1 ? "ies" : "y"}` : "Configure report settings to preview"}
               </span>
               {showPreview && <Badge color={C.olive} bg="rgba(101,109,74,0.1)">{filteredEmployees.length} rows</Badge>}
             </div>
@@ -470,7 +514,7 @@ function ReportBuilder({ report, onBack }) {
               </div>
             ) : (
               <>
-                {isBasicInfo && <EmployeeBasicInfoTable employees={filteredEmployees} fields={additionalFields} />}
+                {isBasicInfo && <EmployeeBasicInfoTable employees={filteredEmployees} fields={additionalFields} multiCompany={selectedCompanies.length > 1} />}
                 {isTxn && <TransactionHistoryTable employees={filteredEmployees} selectedTransactions={selectedTransactions} />}
                 {isVariance && <VarianceTable employees={filteredEmployees} />}
                 {(isLeave || report.id === "leave-days") && <LeaveDaysTable employees={filteredEmployees} />}
@@ -490,11 +534,18 @@ function ReportBuilder({ report, onBack }) {
 }
 
 // ─── Reports List ─────────────────────────────────────────────────────────────
-export default function Reports() {
+export default function Reports({ companies = [], activeCompany = "co-001" }) {
   const [activeReport, setActiveReport] = useState(null);
   const categories = [...new Set(REPORT_TYPES.map(r => r.category))];
 
-  if (activeReport) return <ReportBuilder report={activeReport} onBack={() => setActiveReport(null)} />;
+  if (activeReport) return (
+    <ReportBuilder
+      report={activeReport}
+      onBack={() => setActiveReport(null)}
+      companies={companies.length > 0 ? companies : [{ id: "co-001", name: "Demo Company (Pty) Ltd", tradingName: "Demo Company", employeeCount: 6, industry: "General" }]}
+      activeCompany={activeCompany}
+    />
+  );
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "28px 32px", ...DOTS_BG }}>
