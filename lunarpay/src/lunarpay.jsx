@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { supabase } from "./lib/supabase.js";
 import { CompanySwitcher, INITIAL_COMPANIES } from "./modules/CompanySwitcher.jsx";
 import Dashboard from "./modules/Dashboard.jsx";
 import PayRuns from "./modules/PayRuns.jsx";
@@ -526,7 +527,10 @@ function EmployeeProfile({ employee, onBack, onTerminate }) {
     { id: "settings", label: "Settings", icon: "ti-settings" },
   ];
 
-function Sidebar({ active, onNav, companies, activeCompany, onCompanySwitch, onAddCompany }) {
+function Sidebar({ active, onNav, companies, activeCompany, onCompanySwitch, onAddCompany, session }) {
+  const userEmail = session?.user?.email || "Admin";
+  const userInitial = userEmail[0].toUpperCase();
+  const handleSignOut = () => supabase.auth.signOut();
   return (
     <div style={{ width: 224, background: C.sidebar, borderRight: `1px solid ${C.sidebarBorder}`, display: "flex", flexDirection: "column", flexShrink: 0 }}>
       {/* Logo */}
@@ -562,10 +566,12 @@ function Sidebar({ active, onNav, companies, activeCompany, onCompanySwitch, onA
       {/* User */}
       <div style={{ padding: "14px 16px", borderTop: `1px solid ${C.sidebarBorder}` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(196,180,112,0.2)", border: `1px solid rgba(196,180,112,0.3)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: C.wheat, flexShrink: 0 }}>A</div>
-          <div>
-            <div style={{ fontSize: 13, color: "#C2C5AA", fontWeight: 500 }}>Admin</div>
-            <div style={{ fontSize: 11, color: C.sageMid }}>Administrator</div>
+          <div style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(196,180,112,0.2)", border: `1px solid rgba(196,180,112,0.3)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: C.wheat, flexShrink: 0 }}>{userInitial}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, color: "#C2C5AA", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{userEmail}</div>
+            <button onClick={handleSignOut} style={{ background: "none", border: "none", color: C.sageMid, fontSize: 11, cursor: "pointer", fontFamily: FONT_BODY, padding: 0, marginTop: 1 }}>
+              Sign out
+            </button>
           </div>
         </div>
       </div>
@@ -629,7 +635,7 @@ function EmployeeList({ employees, onSelect }) {
 }
 
 // ─── App ──────────────────────────────────────────────────────────────────────
-export default function LunarPay() {
+export default function LunarPay({ session }) {
   const [companies, setCompanies] = useState(INITIAL_COMPANIES);
   const [activeCompany, setActiveCompany] = useState("co-001");
   const activeCompanyData = companies.find(c => c.id === activeCompany);
@@ -666,6 +672,7 @@ export default function LunarPay() {
         activeCompany={activeCompany}
         onCompanySwitch={(id) => { setActiveCompany(id); setSelected(null); }}
         onAddCompany={(company) => setCompanies(p => [...p, company])}
+        session={session}
       />
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", ...DOTS_BG }}>
