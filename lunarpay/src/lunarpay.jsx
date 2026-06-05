@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { supabase } from "./lib/supabase.js";
 import { CompanySwitcher, INITIAL_COMPANIES } from "./modules/CompanySwitcher.jsx";
+import PayslipGenerator from "./modules/PayslipGenerator.jsx";
 import Dashboard from "./modules/Dashboard.jsx";
 import PayRuns from "./modules/PayRuns.jsx";
 import Leave from "./modules/Leave.jsx";
@@ -521,6 +522,7 @@ function EmployeeProfile({ employee, onBack, onTerminate }) {
     { id: "dashboard", label: "Dashboard", icon: "ti-layout-dashboard" },
     { id: "employees", label: "Employees", icon: "ti-users" },
     { id: "payruns", label: "Pay Runs", icon: "ti-cash" },
+    { id: "payslips", label: "Payslips", icon: "ti-file-invoice" },
     { id: "leave", label: "Leave", icon: "ti-calendar-event" },
     { id: "filing", label: "Self-Service", icon: "ti-device-mobile" },
     { id: "reports", label: "Reports", icon: "ti-chart-bar" },
@@ -680,10 +682,10 @@ export default function LunarPay({ session }) {
         <div style={{ padding: "18px 32px", borderBottom: `1px solid ${C.cardBorder}`, background: "rgba(245,242,234,0.9)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
           <div>
             <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 700, color: C.ink, lineHeight: 1.1 }}>
-              {activeNav === "dashboard" ? "Dashboard" : activeNav === "payruns" ? "Pay Runs" : activeNav === "leave" ? "Leave" : activeNav === "reports" ? "Reports" : activeNav === "filing" ? "Self-Service" : activeNav === "settings" ? "Settings" : selected ? `${selected.lastName}, ${selected.firstName}` : "Employees"}
+              {activeNav === "dashboard" ? "Dashboard" : activeNav === "payruns" ? "Pay Runs" : activeNav === "payslips" ? "Payslips" : activeNav === "leave" ? "Leave" : activeNav === "reports" ? "Reports" : activeNav === "filing" ? "Self-Service" : activeNav === "settings" ? "Settings" : selected ? `${selected.lastName}, ${selected.firstName}` : "Employees"}
             </h1>
             <p style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>
-              {activeNav === "dashboard" ? `${activeCompanyData?.tradingName || activeCompanyData?.name || "Company"} · May 2025` : activeNav === "payruns" ? "Process and manage payroll runs" : activeNav === "leave" ? "Manage leave types, balances and processing" : activeNav === "reports" ? "Generate and export payroll reports" : activeNav === "filing" ? "Employee portal, approvals and payslip release" : activeNav === "settings" ? "Users, company profile, billing and audit log" : selected ? `${selected.jobTitle} · ${selected.payPoint}` : `${activeCount} active · ${inactiveCount} inactive`}
+              {activeNav === "dashboard" ? `${activeCompanyData?.tradingName || activeCompanyData?.name || "Company"} · May 2025` : activeNav === "payruns" ? "Process and manage payroll runs" : activeNav === "payslips" ? "Generate and download payslips as PDF" : activeNav === "leave" ? "Manage leave types, balances and processing" : activeNav === "reports" ? "Generate and export payroll reports" : activeNav === "filing" ? "Employee portal, approvals and payslip release" : activeNav === "settings" ? "Users, company profile, billing and audit log" : selected ? `${selected.jobTitle} · ${selected.payPoint}` : `${activeCount} active · ${inactiveCount} inactive`}
             </p>
           </div>
           {!selected && activeNav === "employees" && (
@@ -707,6 +709,8 @@ export default function LunarPay({ session }) {
           <Dashboard onNavigate={setActiveNav} />
         ) : activeNav === "payruns" ? (
           <PayRuns />
+        ) : activeNav === "payslips" ? (
+          <PayslipGenerator />
         ) : activeNav === "leave" ? (
           <Leave />
         ) : activeNav === "reports" ? (
