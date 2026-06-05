@@ -3,6 +3,7 @@ import PayRuns from "./modules/PayRuns.jsx";
 import Leave from "./modules/Leave.jsx";
 import Reports from "./modules/Reports.jsx";
 import SelfService from "./modules/SelfService.jsx";
+import Settings from "./modules/Settings.jsx";
 
 const C = {
   pageBg: "#F5F2EA",
@@ -654,10 +655,10 @@ export default function LunarPay() {
         <div style={{ padding: "18px 32px", borderBottom: `1px solid ${C.cardBorder}`, background: "rgba(245,242,234,0.9)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
           <div>
             <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 700, color: C.ink, lineHeight: 1.1 }}>
-              {activeNav === "payruns" ? "Pay Runs" : activeNav === "leave" ? "Leave" : activeNav === "reports" ? "Reports" : activeNav === "filing" ? "Self-Service" : selected ? `${selected.lastName}, ${selected.firstName}` : "Employees"}
+              {activeNav === "payruns" ? "Pay Runs" : activeNav === "leave" ? "Leave" : activeNav === "reports" ? "Reports" : activeNav === "filing" ? "Self-Service" : activeNav === "settings" ? "Settings" : selected ? `${selected.lastName}, ${selected.firstName}` : "Employees"}
             </h1>
             <p style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>
-              {activeNav === "payruns" ? "Process and manage payroll runs" : activeNav === "leave" ? "Manage leave types, balances and processing" : activeNav === "reports" ? "Generate and export payroll reports" : activeNav === "filing" ? "Employee portal, approvals and payslip release" : selected ? `${selected.jobTitle} · ${selected.payPoint}` : `${activeCount} active · ${inactiveCount} inactive`}
+              {activeNav === "payruns" ? "Process and manage payroll runs" : activeNav === "leave" ? "Manage leave types, balances and processing" : activeNav === "reports" ? "Generate and export payroll reports" : activeNav === "filing" ? "Employee portal, approvals and payslip release" : activeNav === "settings" ? "Users, company profile, billing and audit log" : selected ? `${selected.jobTitle} · ${selected.payPoint}` : `${activeCount} active · ${inactiveCount} inactive`}
             </p>
           </div>
           {!selected && (
@@ -685,6 +686,8 @@ export default function LunarPay() {
           <Reports />
         ) : activeNav === "filing" ? (
           <SelfService />
+        ) : activeNav === "settings" ? (
+          <Settings />
         ) : selected ? (
           <EmployeeProfile employee={selected} onBack={() => setSelected(null)} onTerminate={handleTerminate} />
         ) : (
