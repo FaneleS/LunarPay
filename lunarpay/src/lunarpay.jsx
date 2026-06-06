@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "./lib/supabase.js";
+import { employees as empQueries } from "./lib/supabase.js";
 import { CompanySwitcher, INITIAL_COMPANIES } from "./modules/CompanySwitcher.jsx";
 import PayslipGenerator from "./modules/PayslipGenerator.jsx";
 import Rollover from "./modules/Rollover.jsx";
@@ -641,27 +642,289 @@ function EmployeeList({ employees, onSelect }) {
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function LunarPay({ session }) {
   const [companies, setCompanies] = useState(INITIAL_COMPANIES);
-  const [activeCompany, setActiveCompany] = useState("co-001");
+  const [activeCompany, setActiveCompany] = useState(null);
   const activeCompanyData = companies.find(c => c.id === activeCompany);
-  const [employees, setEmployees] = useState(SAMPLE_EMPLOYEES);
+
+  // ── Employee state ──────────────────────────────────────────────────────
+  const [employees, setEmployees] = useState([]);
+  const [empLoading, setEmpLoading] = useState(false);
+  const [empError, setEmpError] = useState(null);
+
   const [showAdd, setShowAdd] = useState(false);
   const [selected, setSelected] = useState(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [activeNav, setActiveNav] = useState("dashboard");
 
+  // ── Load companies from Supabase on mount ────────────────────────────────
+  useEffect(() => {
+    const loadCompanies = async () => {
+      const { data, error } = await supabase
+        .from("companies")
+        .select("*")
+        .order("name");
+      if (data && data.length > 0) {
+        setCompanies(data.map(c => ({
+          ...c,
+          tradingName: c.trading_name,
+          regNumber: c.reg_number,
+          taxNumber: c.tax_number,
+          uifRef: c.uif_ref,
+          sdlNumber: c.sdl_number,
+          employeeCount: 0,
+        })));
+        setActiveCompany(data[0].id); // real UUID from Supabase
+      } else {
+        // No companies in Supabase yet — use demo data but don't
+        // set a fake co-001 as active so we don't hit UUID errors
+        setCompanies(INITIAL_COMPANIES);
+        setActiveCompany(INITIAL_COMPANIES[0].id); // fake, will be caught by isRealUUID check
+      }
+    };
+    loadCompanies();
+  }, []);
+
+  // ── Load employees whenever activeCompany changes ────────────────────────
+  const loadEmployees = useCallback(async () => {
+    if (!activeCompany) return;
+
+    // If it's a demo company (not a real UUID), just use sample data
+    const isRealUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeCompany);
+    if (!isRealUUID) {
+      setEmployees(SAMPLE_EMPLOYEES);
+      return;
+    }
+
+    setEmpLoading(true);
+    setEmpError(null);
+    try {
+      const { data, error } = await supabase
+        .from("employees")
+        .select(`
+          *,
+          pay_frequencies(id, name, frequency),
+          pay_points(id, name),
+          employee_bank_accounts(*)
+        `)
+        .eq("company_id", activeCompany)
+        .order("last_name");
+
+      if (error) throw error;
+
+      // Normalise DB snake_case to camelCase for the UI
+      const normalised = (data || []).map(e => ({
+        id: e.id,
+        companyId: e.company_id,
+        employeeNumber: e.employee_number || e.id.slice(0, 6).toUpperCase(),
+        firstName: e.first_names,
+        lastName: e.last_name,
+        dateOfBirth: e.date_of_birth,
+        dateOfAppointment: e.date_of_appointment,
+        lastDayOfService: e.last_day_of_service,
+        idNumber: e.id_number,
+        taxNumber: e.income_tax_number,
+        email: e.email,
+        phone: e.phone,
+        gender: e.gender,
+        jobTitle: e.job_title,
+        payFrequency: e.pay_frequencies?.name || "Monthly",
+        payFrequencyId: e.pay_frequency_id,
+        payPoint: e.pay_points?.name || "General",
+        payPointId: e.pay_point_id,
+        paymentMethod: e.payment_method,
+        bank: e.employee_bank_accounts?.[0]?.bank_name || "",
+        accountNumber: e.employee_bank_accounts?.[0]?.account_number || "",
+        branchCode: e.employee_bank_accounts?.[0]?.branch_code || "",
+        status: e.status,
+        isDirector: e.is_director,
+        isContractor: e.is_contractor,
+        uifExempt: e.uif_exempt,
+        selfServiceEnabled: e.self_service_enabled,
+        selfServiceEmail: e.self_service_email,
+        address: {
+          streetNumber: e.street_number,
+          streetName: e.street_name,
+          suburb: e.suburb,
+          city: e.city,
+          province: e.province,
+          postalCode: e.postal_code,
+        },
+        _raw: e,
+      }));
+      setEmployees(normalised);
+    } catch (err) {
+      console.error("Failed to load employees:", err);
+      setEmpError(err.message);
+      // Fall back to sample data so UI doesn't break
+      setEmployees(SAMPLE_EMPLOYEES);
+    } finally {
+      setEmpLoading(false);
+    }
+  }, [activeCompany]);
+
+  useEffect(() => { loadEmployees(); }, [loadEmployees]);
+
+  // ── Add employee ─────────────────────────────────────────────────────────
+  const handleSave = async (emp) => {
+    // Always close modal immediately for snappy UX
+    setShowAdd(false);
+
+    if (!activeCompany || activeCompany.startsWith("co-")) {
+      // Demo mode — just add to local state
+      setEmployees(p => [...p, { ...emp, id: Date.now().toString() }]);
+      return;
+    }
+
+    // Optimistic add
+    const tempId = `temp-${Date.now()}`;
+    const optimistic = { ...emp, id: tempId, status: "Active" };
+    setEmployees(p => [...p, optimistic]);
+
+    try {
+      const { data, error } = await supabase
+        .from("employees")
+        .insert({
+          company_id: activeCompany,
+          first_names: emp.firstName,
+          last_name: emp.lastName,
+          date_of_appointment: emp.dateOfAppointment,
+          date_of_birth: emp.dateOfBirth || null,
+          id_number: emp.idNumber || null,
+          income_tax_number: emp.taxNumber || null,
+          email: emp.email || null,
+          phone: emp.phone || null,
+          gender: emp.gender || null,
+          job_title: emp.jobTitle || null,
+          pay_frequency_id: emp.payFrequencyId || null,
+          pay_point_id: emp.payPointId || null,
+          payment_method: emp.paymentMethod || "EFT",
+          status: "Active",
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Add bank account if provided
+      if (emp.bank && emp.accountNumber && data) {
+        await supabase.from("employee_bank_accounts").insert({
+          employee_id: data.id,
+          company_id: activeCompany,
+          bank_name: emp.bank,
+          account_number: emp.accountNumber,
+          branch_code: emp.branchCode || null,
+          is_primary: true,
+        });
+      }
+
+      // Log to audit
+      await supabase.from("audit_log").insert({
+        company_id: activeCompany,
+        user_id: session?.user?.id,
+        user_name: session?.user?.email,
+        action: "Added employee",
+        target: `${emp.lastName}, ${emp.firstName}`,
+        category: "Employees",
+      });
+
+      // Replace optimistic with real data
+      await loadEmployees();
+
+    } catch (err) {
+      console.error("Failed to save employee:", err);
+      // Roll back optimistic update
+      setEmployees(p => p.filter(e => e.id !== tempId));
+    }
+  };
+
+  // ── Update employee ──────────────────────────────────────────────────────
+  const handleUpdate = async (empId, updates) => {
+    // Optimistic update
+    setEmployees(p => p.map(e => e.id === empId ? { ...e, ...updates } : e));
+    if (selected?.id === empId) setSelected(prev => ({ ...prev, ...updates }));
+
+    if (!activeCompany || activeCompany.startsWith("co-")) return;
+
+    try {
+      const dbUpdates = {};
+      if (updates.firstName)        dbUpdates.first_names = updates.firstName;
+      if (updates.lastName)         dbUpdates.last_name = updates.lastName;
+      if (updates.jobTitle)         dbUpdates.job_title = updates.jobTitle;
+      if (updates.email)            dbUpdates.email = updates.email;
+      if (updates.phone)            dbUpdates.phone = updates.phone;
+      if (updates.payFrequencyId)   dbUpdates.pay_frequency_id = updates.payFrequencyId;
+      if (updates.payPointId)       dbUpdates.pay_point_id = updates.payPointId;
+      if (updates.paymentMethod)    dbUpdates.payment_method = updates.paymentMethod;
+      if (updates.gender)           dbUpdates.gender = updates.gender;
+
+      if (Object.keys(dbUpdates).length > 0) {
+        const { error } = await supabase
+          .from("employees")
+          .update(dbUpdates)
+          .eq("id", empId);
+        if (error) throw error;
+      }
+
+      await supabase.from("audit_log").insert({
+        company_id: activeCompany,
+        user_id: session?.user?.id,
+        user_name: session?.user?.email,
+        action: "Updated employee",
+        target: `${updates.lastName || ""}, ${updates.firstName || ""}`.trim(),
+        category: "Employees",
+      });
+
+    } catch (err) {
+      console.error("Failed to update employee:", err);
+      await loadEmployees(); // Re-fetch on error
+    }
+  };
+
+  // ── Terminate employee ───────────────────────────────────────────────────
+  const handleTerminate = async (lastDayOfService, uifStatusCode) => {
+    if (!selected) return;
+    const empId = selected.id;
+
+    // Optimistic
+    setEmployees(p => p.map(e => e.id === empId ? { ...e, status: "Inactive", lastDayOfService } : e));
+    setSelected(prev => ({ ...prev, status: "Inactive", lastDayOfService }));
+
+    if (!activeCompany || activeCompany.startsWith("co-")) return;
+
+    try {
+      const { error } = await supabase
+        .from("employees")
+        .update({
+          status: "Inactive",
+          last_day_of_service: lastDayOfService,
+          uif_status_code: uifStatusCode,
+        })
+        .eq("id", empId);
+
+      if (error) throw error;
+
+      await supabase.from("audit_log").insert({
+        company_id: activeCompany,
+        user_id: session?.user?.id,
+        user_name: session?.user?.email,
+        action: "Terminated employee",
+        target: `${selected.lastName}, ${selected.firstName}`,
+        category: "Employees",
+        metadata: { uif_status_code: uifStatusCode, last_day: lastDayOfService },
+      });
+
+    } catch (err) {
+      console.error("Failed to terminate employee:", err);
+      await loadEmployees();
+    }
+  };
+
   const filtered = employees.filter(e => {
     const q = search.toLowerCase();
-    const matchSearch = !q || `${e.firstName} ${e.lastName} ${e.id} ${e.payPoint}`.toLowerCase().includes(q);
+    const matchSearch = !q || `${e.firstName} ${e.lastName} ${e.employeeNumber} ${e.payPoint}`.toLowerCase().includes(q);
     const matchStatus = statusFilter === "All" || e.status === statusFilter;
     return matchSearch && matchStatus;
   });
-
-  const handleSave = (emp) => { setEmployees(p => [...p, emp]); setShowAdd(false); };
-  const handleTerminate = () => {
-    setEmployees(p => p.map(e => e.id === selected.id ? { ...e, status: "Inactive" } : e));
-    setSelected(prev => ({ ...prev, status: "Inactive" }));
-  };
 
   const activeCount = employees.filter(e => e.status === "Active").length;
   const inactiveCount = employees.filter(e => e.status === "Inactive").length;
@@ -674,7 +937,7 @@ export default function LunarPay({ session }) {
         onNav={setActiveNav}
         companies={companies}
         activeCompany={activeCompany}
-        onCompanySwitch={(id) => { setActiveCompany(id); setSelected(null); }}
+        onCompanySwitch={(id) => { setActiveCompany(id); setSelected(null); setEmployees([]); setSearch(""); }}
         onAddCompany={(company) => setCompanies(p => [...p, company])}
         session={session}
       />
@@ -724,13 +987,34 @@ export default function LunarPay({ session }) {
         ) : activeNav === "settings" ? (
           <Settings />
         ) : selected ? (
-          <EmployeeProfile employee={selected} onBack={() => setSelected(null)} onTerminate={handleTerminate} />
+          <EmployeeProfile employee={selected} onBack={() => setSelected(null)} onTerminate={handleTerminate} onUpdate={handleUpdate} />
         ) : (
           <div style={{ flex: 1, overflowY: "auto", padding: "28px 32px" }}>
-            {filtered.length === 0 ? (
+            {empError && (
+              <div style={{ background: C.dangerBg, border: `1px solid rgba(139,58,30,0.2)`, borderRadius: 10, padding: "12px 16px", marginBottom: 16, fontSize: 13, color: C.danger, display: "flex", alignItems: "center", gap: 8 }}>
+                <i className="ti ti-alert-triangle" aria-hidden="true" />
+                Failed to load employees — showing demo data. ({empError})
+                <button onClick={loadEmployees} style={{ marginLeft: "auto", background: "none", border: `1px solid ${C.danger}`, color: C.danger, borderRadius: 6, padding: "3px 10px", fontSize: 12, cursor: "pointer", fontFamily: FONT_BODY }}>Retry</button>
+              </div>
+            )}
+            {empLoading ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {[1,2,3,4].map(i => (
+                  <div key={i} style={{ background: C.card, border: `1px solid ${C.cardBorder}`, borderRadius: 12, padding: "16px 20px", display: "flex", alignItems: "center", gap: 14 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: "50%", background: C.surface, animation: "pulse 1.4s ease-in-out infinite" }} />
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ width: "30%", height: 12, borderRadius: 6, background: C.surface, animation: "pulse 1.4s ease-in-out infinite" }} />
+                      <div style={{ width: "20%", height: 10, borderRadius: 6, background: C.surface, animation: "pulse 1.4s ease-in-out infinite" }} />
+                    </div>
+                  </div>
+                ))}
+                <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.4 } }`}</style>
+              </div>
+            ) : filtered.length === 0 ? (
               <div style={{ textAlign: "center", padding: "80px 0" }}>
                 <OrbitalLogo size={44} />
-                <p style={{ marginTop: 16, color: C.muted, fontSize: 14 }}>No employees found</p>
+                <p style={{ marginTop: 16, color: C.muted, fontSize: 14 }}>{employees.length === 0 ? "No employees yet — add your first employee to get started" : "No employees match your search"}</p>
+                {employees.length === 0 && <button onClick={() => setShowAdd(true)} style={{ marginTop: 16, background: C.olive, color: "#F5F2EA", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 13, cursor: "pointer", fontFamily: FONT_BODY, fontWeight: 500 }}>Add First Employee</button>}
               </div>
             ) : (
               <EmployeeList employees={filtered} onSelect={setSelected} />
